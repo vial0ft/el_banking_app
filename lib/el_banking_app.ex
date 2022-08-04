@@ -3,7 +3,7 @@ defmodule ElBankingApp.Api do
   def create_purse() do
     purse = %{
       id: make_ref(),
-      start: {Purse, :start_link, [%{}]}
+      start: {ElBankingApp.Purse, :start_link, [%{}]}
     }
     Supervisor.start_child(ElBankingApp.Supervisor, purse)
   end

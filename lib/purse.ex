@@ -1,7 +1,8 @@
-defmodule Purse do
+defmodule ElBankingApp.Purse do
   use GenServer
   require Logger
 
+  @spec start_link(any) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(state \\ %{}) do
     GenServer.start_link(__MODULE__, state)
   end
