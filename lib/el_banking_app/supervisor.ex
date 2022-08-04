@@ -1,8 +1,10 @@
 defmodule ElBankingApp.Supervisor do
   use Supervisor
 
+  @name ElBankingApp.Supervisor
+
   def start_link(init_arg) do
-    Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
+    Supervisor.start_link(__MODULE__, init_arg, name: @name)
   end
 
   def init(_init_arg) do
