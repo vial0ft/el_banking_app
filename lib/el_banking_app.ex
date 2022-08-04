@@ -1,18 +1,9 @@
 defmodule ElBankingApp.Api do
-  use GenServer
 
-  def init(state) do
-    {:ok, state}
-  end
-
-  def start_link(state) do
-    GenServer.start_link(__MODULE__, state, name: __MODULE__)
-  end
-
-  def create_purse(name) do
+  def create_purse() do
     purse = %{
-      id: name,
-      start: {Purse, :start_link, [%{}, name]}
+      id: make_ref(),
+      start: {Purse, :start_link, [%{}]}
     }
     Supervisor.start_child(ElBankingApp.Supervisor, purse)
   end

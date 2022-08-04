@@ -8,13 +8,7 @@ defmodule ElBankingApp.Supervisor do
   end
 
   def init(_init_arg) do
-    children = [
-      %{
-        id: ElBankingApp.Api,
-        start: {ElBankingApp.Api, :start_link, [{}]}
-      }
-    ]
-
+    children = []
     Supervisor.init(children, strategy: :one_for_one)
   end
 end

@@ -7,6 +7,6 @@ defmodule ElBankingApp.Application do
 
   @impl true
   def start(_type, _args) do
-    ElBankingApp.Supervisor.start_link(name: ElBankingApp.Supervisor)
+    Supervisor.start_link([ElBankingApp.Supervisor], strategy: :one_for_one)
   end
 end
