@@ -39,20 +39,30 @@ defmodule ElBankingApp.Api do
   end
 
   def transfer(from_purse, to_purse, {currency, amount}) do
-    withdraw(from_purse, currency, amount)
-    |> handle_chain_error(
+    handle_either(
+      withdraw(from_purse, currency, amount),
       fn _ -> deposit(to_purse, currency, amount) end,
-      fn _err -> deposit(from_purse, currency, amount) end
+      fn err ->
+        handle_either(
+          deposit(from_purse, currency, amount),
+          fn _ ->
+            {:error,
+             "Transfer failed with fallback. #{currency} #{amount} returned to #{from_purse}: #{err}"}
+          end,
+          fn _ -> {:error, "Transfer failed. Sorry we lost money :-(: #{err}"} end
+        )
+      end
     )
+    |> handle_either(fn _ -> {:ok, "#{from_purse} => #{currency} #{amount} => #{to_purse}"} end)
   end
 
-  defp handle_chain_error(either, do_next, do_on_error) do
+  defp handle_either(either, do_next, do_on_error \\ nil) do
     case either do
       {:error, _why} = err ->
         if do_on_error != nil do
           do_on_error.(err)
         else
-          err
+          either
         end
 
       ok_like ->
