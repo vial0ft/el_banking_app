@@ -37,4 +37,26 @@ defmodule ElBankingApp.Api do
   def peek(purse) do
     GenServer.call(purse, :peek)
   end
+
+  def transfer(from_purse, to_purse, {currency, amount}) do
+    withdraw(from_purse, currency, amount)
+    |> handle_chain_error(
+      fn _ -> deposit(to_purse, currency, amount) end,
+      fn _err -> deposit(from_purse, currency, amount) end
+    )
+  end
+
+  defp handle_chain_error(either, do_next, do_on_error) do
+    case either do
+      {:error, _why} = err ->
+        if do_on_error != nil do
+          do_on_error.(err)
+        else
+          err
+        end
+
+      ok_like ->
+        do_next.(ok_like)
+    end
+  end
 end
