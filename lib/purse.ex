@@ -2,16 +2,15 @@ defmodule ElBankingApp.Purse do
   use GenServer
   require Logger
 
-  @spec start_link(any) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(name) do
-    case :dets.open_file(name, [{:keypos, 1}, {:type, :set}, {:access, :protected}]) do
-      {:ok, ref} -> GenServer.start_link(__MODULE__, ref)
-      _ -> {:error, "Can't open purse with name #{name}"}
-    end
+    GenServer.start_link(__MODULE__, name)
   end
 
-  def init(state) do
-    {:ok, state}
+  def init(name) do
+    case :dets.open_file(name, [{:type, :set}, {:access, :protected}]) do
+      {:ok, ref} -> {:ok, ref}
+      _ -> {:error, "Can't open purse with name #{name}"}
+    end
   end
 
   def handle_call({_, _, amount}, _from, name) when not is_number(amount) or amount <= 0 do
