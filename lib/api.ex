@@ -45,7 +45,7 @@ defmodule ElBankingApp.Api do
 
       _ ->
         case deposit(to_purse, currency, amount) do
-          {:error, transfer_fail_reason}->
+          {:error, transfer_fail_reason} ->
             case deposit(from_purse, currency, amount) do
               {:error, why} ->
                 {:error, "Transfer failed. Sorry we lost money :-(: #{why}"}
