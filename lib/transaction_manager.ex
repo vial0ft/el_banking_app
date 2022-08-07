@@ -30,7 +30,7 @@ defmodule ElBankingApp.TransactionManager do
   def do_transaction(tr_id) do
     case :ets.match_object(@table_name, {tr_id, {:_, :_}}) do
       [^tr_id, {actions_list, fb_actions}] ->
-        case execute_transaction(actions_list, fb_actions, tr_id) do
+        case execute_transaction(Enum.reverse(actions_list), fb_actions, tr_id) do
           {:ok, _} = ok_result ->
             :ets.delete(@table_name, tr_id)
             ok_result
