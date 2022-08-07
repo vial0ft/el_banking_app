@@ -1,6 +1,6 @@
 defmodule ElBankingApp.Api do
-  def create_purse(name) when is_atom(name) do
-    case Process.whereis(name) do
+  def create_purse(name) when is_bitstring(name) do
+    case Process.whereis(String.to_atom(name)) do
       nil -> create_new_purse(name)
       _pid -> {:error, "#{name} already exist"}
     end
@@ -39,34 +39,25 @@ defmodule ElBankingApp.Api do
   end
 
   def transfer(from_purse, to_purse, {currency, amount}) do
-    handle_either(
-      withdraw(from_purse, currency, amount),
-      fn _ -> deposit(to_purse, currency, amount) end,
-      fn err ->
-        handle_either(
-          deposit(from_purse, currency, amount),
-          fn _ ->
-            {:error,
-             "Transfer failed with fallback. #{currency} #{amount} returned to #{from_purse}: #{err}"}
-          end,
-          fn _ -> {:error, "Transfer failed. Sorry we lost money :-(: #{err}"} end
-        )
-      end
-    )
-    |> handle_either(fn _ -> {:ok, "#{from_purse} => #{currency} #{amount} => #{to_purse}"} end)
-  end
+    case withdraw(from_purse, currency, amount) do
+      {:error, why} ->
+        {:error, "Transfer failed during withdraw for #{inspect(from_purse)}: #{why}"}
 
-  defp handle_either(either, do_next, do_on_error \\ nil) do
-    case either do
-      {:error, _why} = err ->
-        if do_on_error != nil do
-          do_on_error.(err)
-        else
-          either
+      _ ->
+        case deposit(to_purse, currency, amount) do
+          {:error, transfer_fail_reason}->
+            case deposit(from_purse, currency, amount) do
+              {:error, why} ->
+                {:error, "Transfer failed. Sorry we lost money :-(: #{why}"}
+
+              _ ->
+                {:error,
+                 "Transfer failed with fallback. #{currency} #{amount} returned to #{inspect(from_purse)}: #{transfer_fail_reason}"}
+            end
+
+          _ ->
+            {:ok, "#{inspect(from_purse)} => #{currency} #{amount} => #{inspect(to_purse)}"}
         end
-
-      ok_like ->
-        do_next.(ok_like)
     end
   end
 end
