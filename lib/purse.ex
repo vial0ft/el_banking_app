@@ -54,11 +54,11 @@ defmodule ElBankingApp.Purse do
         _ -> 0
       end
 
-    {:reply, {currency, result}, state}
+    {:reply, {:ok, {currency, result}}, state}
   end
 
   def handle_call(:peek, _from, {name, _} = state) do
-    {:reply, :dets.match_object(name, {:_, :_}), state}
+    {:reply, {:ok, :dets.match_object(name, {:_, :_})}, state}
   end
 
   # Transaction handlers

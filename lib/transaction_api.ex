@@ -1,9 +1,21 @@
 defmodule ElBankingApp.TransactionApi do
+  use GenServer
+  require Logger
+
   @transaction_table :transactions
+
+  def start_link(state) do
+    GenServer.start_link(__MODULE__, state)
+  end
+
+  def init(state) do
+    :ets.new(@transaction_table, [:set, :protected, :named_table])
+    {:ok, state}
+  end
 
   @spec new_transaction(list_of_pids :: list()) :: {:error, String} | {:ok, integer}
   def new_transaction(list_of_pids) when length(list_of_pids) > 0 do
-    tr_id = :erlang.unique_integer()
+    tr_id = :erlang.unique_integer([:positive])
     set_of_pids = Enum.uniq(list_of_pids)
 
     case :ets.insert_new(@transaction_table, {tr_id, set_of_pids}) do
