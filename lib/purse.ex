@@ -95,10 +95,9 @@ defmodule ElBankingApp.Purse do
         _from,
         {name, {:transaction_state, tr_id, {_tr_state, fallback_state}}}
       ) do
-
-
-    {:reply, {:ok, {:falback, tr_id, :dets.insert(name, fallback_state)}},
-     {name, {:transaction_state, nil, {%{}, []}}}}
+    clean_state(name)
+    upsert(name, fallback_state)
+    {:reply, {:ok, {:fallback, tr_id}}, {name, {:transaction_state, nil, {%{}, []}}}}
   end
 
   def handle_call(
