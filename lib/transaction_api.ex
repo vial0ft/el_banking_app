@@ -39,10 +39,12 @@ defmodule ElBankingApp.TransactionApi do
   end
 
   def reject(tr_id, reason) do
-    case get_pids(tr_id) do
+    result = case get_pids(tr_id) do
       {:error, _} = err -> err
       {:ok, pids} -> send_fallback({tr_id, reason}, pids)
     end
+    :ets.delete_object(@transaction_table, tr_id)
+    result
   end
 
   defp get_pids(tr_id) do
