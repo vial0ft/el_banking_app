@@ -2,32 +2,17 @@ defmodule ElBankingApp.Purse do
   use GenServer
   require Logger
 
-  @spec start_link(any) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(name) do
-    GenServer.start_link(__MODULE__, name)
+    GenServer.start_link(__MODULE__, name, name: process_name(name))
   end
 
+  defp process_name(name), do: {:via, Registry, {ElBankingApp.Supervisor.purse_registry(), name}}
+
   def init(name) do
-    case :dets.open_file('/tmp/purse/#{name}', type: :set) do
+    case :dets.open_file('/tmp/purse_#{name}', type: :set) do
       {:ok, ref} -> {:ok, {ref, {:transaction_state, nil, {%{}, []}}}}
       _ -> {:error, "Can't open purse with name #{name}"}
     end
-  end
-
-  def handle_call(
-        {:transaction_init, other_tr_id},
-        _from,
-        {_, {:transaction_state, _tr_id, _tr_state}} = state
-      ) do
-    {:reply, {:error, "#{other_tr_id} can't start during other transaction"}, state}
-  end
-
-  def handle_call(
-        {:transaction_commit, other_tr_id},
-        _from,
-        {_, {:transaction_state, _tr_id, _tr_state}} = state
-      ) do
-    {:reply, {:error, "#{other_tr_id} can't commit during other transaction"}, state}
   end
 
   def handle_call({action, _, _}, _from, {_, {:transaction_state, tr_id, _tr_state}} = state)
@@ -62,9 +47,42 @@ defmodule ElBankingApp.Purse do
   end
 
   # Transaction handlers
-  def handle_call({:transaction_init, tr_id}, _from, {name, _}) do
+
+  # transaction_init
+
+
+
+  def handle_call({:transaction_init, tr_id}, _from, {name, {:transaction_state, nil, _tr_state}}) do
     state = :dets.match_object(name, {:_, :_})
     {:reply, {:ok, tr_id}, {name, {:transaction_state, tr_id, {Map.new(state), state}}}}
+  end
+
+  def handle_call(
+    {:transaction_init, tr_id},
+    _from,
+    {_, {:transaction_state, tr_id, _tr_state}} = state
+  ) do
+{:reply, {:error, "already started"}, state}
+end
+
+  def handle_call(
+    {:transaction_init, other_tr_id},
+    _from,
+    {_, {:transaction_state, tr_id, _tr_state}} = state
+  )
+  when other_tr_id != tr_id do
+{:reply, {:error, "#{other_tr_id} can't start during other transaction"}, state}
+end
+
+  # transaction_add
+
+  def handle_call(
+        {:transaction_add, {other_tr_id, _}},
+        _from,
+        {_, {:transaction_state, tr_id, _tr_state}} = state
+      )
+      when other_tr_id != tr_id do
+    {:reply, {:error, "#{other_tr_id} wrong transaction id"}, state}
   end
 
   def handle_call(
@@ -72,60 +90,91 @@ defmodule ElBankingApp.Purse do
         _from,
         {name, {:transaction_state, tr_id, {tr_state, fallback_state}}}
       ) do
-    case do_with_state(tr_state, action) do
-      {:ok, new_tr_state} ->
-        {:reply, {:ok, action},
-         {name, {:transaction_state, tr_id, {new_tr_state, fallback_state}}}}
+    {result, new_state} =
+      case do_with_state(tr_state, action) do
+        {:ok, new_tr_state} ->
+          {{:ok, action}, {name, {:transaction_state, tr_id, {new_tr_state, fallback_state}}}}
 
-      {:error, _} = err ->
-        {:reply, err, {name, {:transaction_state, nil, {%{}, []}}}}
-    end
+        {:error, why} ->
+          {self_reject_with_reason(tr_id, why), default_state(name)}
+      end
+
+    {:reply, result, new_state}
   end
 
-  def handle_call(
-        {:transaction_add, {other_tr_id, _}},
-        _from,
-        {_, {:transaction_state, _tr_id, _tr_state}} = state
-      ) do
-    {:reply, {:error, "#{other_tr_id} wrong transaction id"}, state}
-  end
+  # transaction_fallback
 
   def handle_call(
-        {:transaction_fallback, {tr_id}},
+        {:transaction_rollback, {tr_id, reason}},
         _from,
         {name, {:transaction_state, tr_id, {_tr_state, fallback_state}}}
       ) do
     clean_state(name)
     upsert(name, fallback_state)
-    {:reply, {:ok, {:fallback, tr_id}}, {name, {:transaction_state, nil, {%{}, []}}}}
+    {:reply, {:ok, {:rollback, tr_id, reason}}, default_state(name)}
   end
 
   def handle_call(
-        {:transaction_commit, {tr_id}},
+    {:transaction_rollback, {other_tr_id, _}},
+    _from,
+    {_, {:transaction_state, tr_id, _}} = state
+  )
+  when other_tr_id != tr_id do
+{:reply, {:error, "#{other_tr_id} wrong transaction id"}, state}
+end
+
+  # transaction_commit
+
+  def handle_call(
+        {:transaction_commit, tr_id},
         _from,
         {name, {:transaction_state, tr_id, {tr_state, fallback_state}}}
       ) do
-    case clean_state(name) do
-      {:error, _} = err ->
-        {:reply, {:error, err}, {name, {:transaction_state, nil, {%{}, []}}}}
+    {result, new_state} =
+      with {:ok, _cleaned} <- clean_state(name),
+           list <- Map.to_list(tr_state),
+           {:ok, _applied_tr_state} <- upsert(name, list) do
+        {{:ok}, {name, {:transaction_state, tr_id, {%{}, fallback_state}}}}
+      else
+        {:error, why} -> {self_reject_with_reason(tr_id, why), default_state(name)}
+      end
+    Logger.info("commit result: #{inspect(result)} - #{inspect(new_state)}")
+    {:reply, result, new_state}
+  end
 
-      _ ->
-        case upsert(name, Map.to_list(tr_state)) do
-          {:ok, _} ->
-            {:reply, {:ok}, {name, {:transaction_state, nil, {%{}, []}}}}
+  def handle_call(
+    {:transaction_commit, other_tr_id},
+    _from,
+    {_, {:transaction_state, tr_id, _}} = state
+  )
+  when other_tr_id != tr_id do
+{:reply, {:error, "#{other_tr_id} can't commit during other transaction"}, state}
+end
 
-          _ ->
-            case upsert(name, fallback_state) do
-              {:ok, _} ->
-                {:reply, {:error, "Can't commit transaction. Fallback"},
-                 {name, {:transaction_state, nil, {%{}, []}}}}
+  # transaction_close
 
-              _ ->
-                {:reply, {:error, "Can't fallback with previous state"},
-                 {name, {:transaction_state, nil, {%{}, []}}}}
-            end
-        end
-    end
+
+  def handle_call(
+        {:transaction_close, tr_id},
+        _from,
+        {name, {:transaction_state, tr_id, _}}
+      ) do
+    {:reply, {:ok, {:closed, tr_id}}, default_state(name)}
+  end
+
+  def handle_call(
+    {:transaction_close, {other_tr_id, _}},
+    _from,
+    {_, {:transaction_state, tr_id, _}} = state
+  )
+  when other_tr_id != tr_id do
+{:reply, {:error, "#{other_tr_id} wrong transaction id"}, state}
+end
+
+
+  def handle_call(msg, _from, state) do
+    Logger.info("#{inspect(msg)} - #{inspect(state)} - do nothing")
+    {:reply, :ok, state}
   end
 
   def handle_info(msg, state) do
@@ -142,21 +191,12 @@ defmodule ElBankingApp.Purse do
       Map.new(:dets.match_object(name, {:_, :_}))
       |> do_with_state(action)
 
-    case new_state_result do
-      {:error, _} = err ->
-        err
-
-      {:ok, new_state} ->
-        case clean_state(name) do
-          {:error, _} = err ->
-            err
-
-          {:ok, _} ->
-            case upsert(name, Map.to_list(new_state)) do
-              {:error, _} = err -> err
-              {:ok, _} -> {:ok, action}
-            end
-        end
+    with {:ok, new_state} <- new_state_result,
+         {:ok, _} <- clean_state(name),
+         {:ok, _} <- upsert(name, Map.to_list(new_state)) do
+      {:ok, action}
+    else
+      err -> err
     end
   end
 
@@ -187,5 +227,14 @@ defmodule ElBankingApp.Purse do
       {:error, _} = err -> err
       _ -> {:ok, new_value}
     end
+  end
+
+  defp self_reject_with_reason(tr_id, reason) do
+    Logger.info("self reject #{tr_id}: #{reason}")
+    GenServer.call(self(), {:transaction_rollback, {tr_id, reason}})
+  end
+
+  defp default_state(name) do
+    {name, {:transaction_state, nil, {%{}, []}}}
   end
 end

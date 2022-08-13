@@ -1,8 +1,11 @@
 defmodule ElBankingApp.Api do
+  @purse_registry :purses_registry
+
   def create_purse(name) when is_bitstring(name) do
-    case Process.whereis(String.to_atom(name)) do
-      nil -> create_new_purse(name)
-      _pid -> {:error, "#{name} already exist"}
+    case create_new_purse(name) do
+      {:ok, _pid} = p -> p
+      {:error, {:already_started, pid}} -> {:ok, pid}
+      err -> err
     end
   end
 
@@ -12,16 +15,17 @@ defmodule ElBankingApp.Api do
       start: {ElBankingApp.Purse, :start_link, [name]}
     }
 
-    Supervisor.start_child(ElBankingApp.Supervisor, purse)
+    DynamicSupervisor.start_child(ElBankingApp.PursesSupervisor, purse)
   end
 
-  def get_purse(name) when is_atom(name) do
-    case Process.whereis(name) do
-      nil -> {:error, "#{name} not exist"}
-      pid -> {:ok, pid}
+  def get_purse(name) when is_bitstring(name) do
+    case Registry.lookup(@purse_registry, name) do
+      [] -> {:error, "#{name} isn't exist"}
+      [{pid, _}] -> {:ok, pid}
     end
   end
 
+  @spec deposit(atom | pid | {atom, any} | {:via, atom, any}, any, any) :: any
   def deposit(purse, currency, amount) do
     GenServer.call(purse, {:deposit, currency, amount})
   end
@@ -36,28 +40,5 @@ defmodule ElBankingApp.Api do
 
   def peek(purse) do
     GenServer.call(purse, :peek)
-  end
-
-  def transfer(from_purse, to_purse, {currency, amount}) do
-    case withdraw(from_purse, currency, amount) do
-      {:error, why} ->
-        {:error, "Transfer failed during withdraw for #{inspect(from_purse)}: #{why}"}
-
-      _ ->
-        case deposit(to_purse, currency, amount) do
-          {:error, transfer_fail_reason} ->
-            case deposit(from_purse, currency, amount) do
-              {:error, why} ->
-                {:error, "Transfer failed. Sorry we lost money :-(: #{why}"}
-
-              _ ->
-                {:error,
-                 "Transfer failed with fallback. #{currency} #{amount} returned to #{inspect(from_purse)}: #{transfer_fail_reason}"}
-            end
-
-          _ ->
-            {:ok, "#{inspect(from_purse)} => #{currency} #{amount} => #{inspect(to_purse)}"}
-        end
-    end
   end
 end
