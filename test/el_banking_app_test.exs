@@ -25,7 +25,7 @@ defmodule ElBankingAppTest do
     assert peek == {"usd", 50}
   end
 
-  test "Transaction success", context do
+  test "Transaction success" do
     context =
       ["tr1", "tr2", "tr3"]
       |> Enum.map(fn tr_name ->
@@ -43,7 +43,7 @@ defmodule ElBankingAppTest do
     {:ok, {"usd", a2}} = ElBankingApp.Api.peek(pid2, "usd")
     {:ok, {"usd", a3}} = ElBankingApp.Api.peek(pid3, "usd")
 
-    {:ok, tr_id} = ElBankingApp.TransactionApi.new_transaction([pid1, pid2, pid3])
+    {:ok, tr_id, _pid} = ElBankingApp.TransactionApi.new_transaction([pid1, pid2, pid3])
     ElBankingApp.TransactionApi.add_change(tr_id, pid1, {:withdraw, "usd", 10})
     ElBankingApp.TransactionApi.add_change(tr_id, pid2, {:withdraw, "usd", 20})
     ElBankingApp.TransactionApi.add_change(tr_id, pid3, {:deposit, "usd", 30})
@@ -54,9 +54,5 @@ defmodule ElBankingAppTest do
     {:ok, {"usd", a31}} = ElBankingApp.Api.peek(pid3, "usd")
 
     assert a1 + a2 + a3 == a11 + a21 + a31
-  end
-
-  defp invoke_local_or_imported_function(context) do
-    [from_named_setup: true]
-  end
+    end
 end
