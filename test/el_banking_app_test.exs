@@ -54,5 +54,5 @@ defmodule ElBankingAppTest do
     {:ok, {"usd", a31}} = ElBankingApp.Api.peek(pid3, "usd")
 
     assert a1 + a2 + a3 == a11 + a21 + a31
-    end
+  end
 end
